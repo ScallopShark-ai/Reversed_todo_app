@@ -11,10 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4  # 升级到 v4
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5 # 升级到 v5
         with:
           python-version: '3.11'
 
@@ -22,17 +22,17 @@ jobs:
         run: pip install flet
 
       - name: Setup Flutter
-        uses: actions/upload-artifact@v4
+        uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.x'  # 使用较新的稳定版
+          flutter-version: '3.19.x'
 
       - name: Flet Build APK
-        # 这里的命令会自动把当前目录下的所有文件（包括字体）打包进去
+        # 这里保留了您刚才设置的 APP 名字和 ID
         run: |
-          flet build apk --product "逆序打卡" --icon "icon.png" --org "com.Scallop.nixudaka" --verbose
+          flet build apk --product "逆序打卡" --icon "icon.png" --org "com.Scallop.nixudaka" --verbosee
 
       - name: Upload APK
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4  # 【关键修复】这里必须是 v4
         with:
           name: daka-app-release
           path: build/apk/app-release.apk
