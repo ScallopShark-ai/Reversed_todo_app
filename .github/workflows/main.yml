@@ -1,0 +1,38 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Flet
+        run: pip install flet
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.x'  # 使用较新的稳定版
+
+      - name: Flet Build APK
+        # 这里的命令会自动把当前目录下的所有文件（包括字体）打包进去
+        run: |
+          flet build apk --product "逆序打卡" --icon "icon.png" --org "com.Scallop.nixudaka" --verbose
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v3
+        with:
+          name: daka-app-release
+          path: build/apk/app-release.apk
