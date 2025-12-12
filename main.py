@@ -37,9 +37,21 @@ def main(page: ft.Page):
 
     def save_data(data):
         try:
+            # Flet 的 client_storage 只能存 JSON 可序列化的数据
+            # 如果 data 里包含 datetime 对象，这里会直接崩溃
             page.client_storage.set("daka_data", data)
-        except:
-            pass
+        except Exception as e:
+            # 【关键修改】如果保存失败，直接弹红窗告诉你是为什么
+            print(f">>> 保存数据失败: {e}")
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"【严重】数据保存失败: {e}"), 
+                bgcolor="red",
+                duration=5000
+            )
+            page.snack_bar.open = True
+            page.update()
+            # 抛出异常，中断后面的操作，不要假装成功
+            raise e
 
     app_data = load_data()
 
@@ -104,7 +116,6 @@ def main(page: ft.Page):
 
     # 添加任务 (带详细调试信息)
     def do_add_task(name, days_str):
-        print(f">>> do_add_task 被调用: name={name}, days={days_str}") # Debug
         try:
             if not days_str.isdigit():
                 page.snack_bar = ft.SnackBar(ft.Text("天数必须是纯数字！"))
@@ -114,20 +125,44 @@ def main(page: ft.Page):
 
             days = int(days_str)
             
+            # 【注意检查这里】
+            # timestamp 生成的是 float，str() 后没问题
+            # 确保这里面没有 datetime 对象，全都是 str/int/bool
             new_task = {
                 "id": str(datetime.now().timestamp()),
-                "name": name,
+                "name": str(name), # 强制转字符串，防止特殊类型
                 "days": days,
                 "original_target": days,
-                "created_at": datetime.now().strftime("%Y-%m-%d"),
-                "last_interaction": datetime.now().strftime("%Y-%m-%d"),
+                "created_at": datetime.now().strftime("%Y-%m-%d"), # 已经是字符串
+                "last_interaction": datetime.now().strftime("%Y-%m-%d"), # 已经是字符串
                 "checked_today": False
             }
+            
+            # 先打印一下，看看数据结构对不对
+            print(f">>> 准备保存的新任务: {new_task}")
+
             app_data["tasks"].append(new_task)
+            
+            # 这里调用上面修改过的 save_data
+            # 如果保存失败，这里会报错并跳到 except
             save_data(app_data)
             
-            print(">>> 数据保存成功，准备跳转回主页") # Debug
+            # 如果能走到这一步，说明保存成功了
             render_main_page(msg="任务创建成功！")
+            
+        except Exception as e:
+            # 这里会捕获 save_data 抛出的异常
+            import traceback
+            traceback.print_exc()
+            
+            # 再次强制弹窗，确保你能看到
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"创建流程中断: {str(e)}"), 
+                bgcolor="red",
+                duration=5000
+            )
+            page.snack_bar.open = True
+            page.update()
             
         except Exception as e:
             print(">>> do_add_task 内部报错:") # Debug
@@ -329,4 +364,5 @@ def main(page: ft.Page):
 
 if __name__ == "__main__":
     ft.app(target=main)
+
 
