@@ -250,39 +250,42 @@ def main(page: ft.Page):
         # ============================================================
         # 【核心修改区域】这里加入了强力调试代码
         # ============================================================
+       #替换原来的 on_confirm 函数
         def on_confirm(e):
-            print("--------------------------------------------------")
-            print(">>> 调试信息：【确定创建】按钮被点击了！(Button Clicked)") 
-            print(f">>> 当前输入框内容: Name=[{name_field.value}], Days=[{days_field.value}]")
-            print("--------------------------------------------------")
+            # === 1. 视觉调试法：一点击立刻改按钮颜色 ===
+            # 如果按钮变红了，说明 Python 代码 100% 运行了，只是日志被吞了。
+            # 如果按钮没变色，说明点击事件根本没触发（可能是遮挡或 UI 库 bug）。
+            e.control.text = "正在运行..."
+            e.control.bgcolor = "red" 
+            e.control.update() 
+            
+            # 引入 logging 模块，这比 print 更强力，很难被系统屏蔽
+            import logging
+            logging.error(">>>>>>>>>> 调试：按钮被点击了！ <<<<<<<<<<")
 
             try:
-                # 1. 校验逻辑
+                # 模拟延时，让你看清按钮变红
+                import time
+                time.sleep(0.5)
+
                 if not name_field.value:
-                    print(">>> 校验失败: 名字为空") # Debug
+                    logging.error(">>> 校验失败: 名字为空")
                     name_field.error_text = "请输入任务名称"
                     page.update()
                     return
                 if not days_field.value:
-                    print(">>> 校验失败: 天数为空") # Debug
+                    logging.error(">>> 校验失败: 天数为空")
                     days_field.error_text = "请输入目标天数"
                     page.update()
                     return
                 
-                # 2. 调用逻辑
-                print(">>> 校验通过，正在调用 do_add_task...") # Debug
+                logging.error(">>> 校验通过，调用 do_add_task")
                 do_add_task(name_field.value, days_field.value)
                 
             except Exception as err:
-                print(">>> 严重错误：on_confirm 发生异常！") # Debug
-                traceback.print_exc() # 打印详细报错
-                
-                # 尝试把错误显示在手机屏幕上，防止你看不到日志
-                page.snack_bar = ft.SnackBar(
-                    ft.Text(f"程序崩溃: {str(err)}"), 
-                    bgcolor="red",
-                    duration=5000 # 显示5秒
-                )
+                logging.error(f">>> 崩溃: {err}")
+                traceback.print_exc()
+                page.snack_bar = ft.SnackBar(ft.Text(f"崩溃: {str(err)}"), bgcolor="red")
                 page.snack_bar.open = True
                 page.update()
 
@@ -326,3 +329,4 @@ def main(page: ft.Page):
 
 if __name__ == "__main__":
     ft.app(target=main)
+
