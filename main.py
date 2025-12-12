@@ -3,25 +3,21 @@ from datetime import datetime
 import traceback
 import time
 
-# 注意：移除了 os 模块中关于字体路径的检测，这是导致安卓白屏的元凶之一
-
 def main(page: ft.Page):
     
     # ================= 1. 一加13 专属适配配置 =================
     page.title = "逆序打卡"
     page.theme_mode = "light"
-    # 【修复白屏核心】不要设置 scroll="None"，安卓需要滚动容错
+    # 【核心】安卓需要滚动容错，防止内容溢出白屏
     page.scroll = "auto" 
-    # 【适配挖孔屏】禁用默认 Padding，完全交给 SafeArea 控制
     page.padding = 0 
     
-    # 使用系统默认字体（Roboto/Noto Sans），确保在 OPPO 手机上绝对能显示
+    # 使用系统默认字体，确保兼容性
     page.theme = ft.Theme()
 
-    # ================= 2. 数据层 (强壮版) =================
+    # ================= 2. 数据层 =================
     
     def load_data():
-        """从手机存储读取数据"""
         try:
             data = page.client_storage.get("daka_data")
             if data is None:
@@ -32,13 +28,11 @@ def main(page: ft.Page):
             return {"tasks": [], "achievements": []}
 
     def save_data(data):
-        """保存数据到闪存"""
         try:
             page.client_storage.set("daka_data", data)
         except Exception as e:
-            # OPPO 手机通常会有严格的权限弹窗，如果这里报错，会弹窗提示
             page.snack_bar = ft.SnackBar(
-                ft.Text(f"存储失败 (请检查权限): {str(e)}"), 
+                ft.Text(f"存储失败: {str(e)}"), 
                 bgcolor="red",
                 duration=5000
             )
@@ -48,7 +42,7 @@ def main(page: ft.Page):
     # 初始化数据
     app_data = load_data()
 
-    # --- 跨天检查逻辑 ---
+    # --- 跨天逻辑 ---
     def process_penalty_logic():
         try:
             today_str = datetime.now().strftime("%Y-%m-%d")
@@ -98,13 +92,21 @@ def main(page: ft.Page):
                     task['days'] -= 1
                     
                     if task['days'] <= 0:
+                        # 任务完成：移出任务列表，加入成就墙
                         app_data["tasks"].remove(task)
-                        app_data["achievements"].append({
+                        
+                        # 确保 achievements 列表存在
+                        if "achievements" not in app_data:
+                            app_data["achievements"] = []
+                            
+                        app_data["achievements"].insert(0, { # 插到最前面
                             "name": task['name'],
                             "created_at": task.get('created_at', '?'),
                             "finished_at": datetime.now().strftime("%Y-%m-%d")
                         })
-                        page.show_snack_bar(ft.SnackBar(ft.Text(f"任务 {task['name']} 完成！")))
+                        
+                        page.snack_bar = ft.SnackBar(ft.Text(f"🎉 恭喜！{task['name']} 已完成！"))
+                        page.snack_bar.open = True
                     else:
                         task['checked_today'] = True
                         task['last_interaction'] = datetime.now().strftime("%Y-%m-%d")
@@ -113,17 +115,20 @@ def main(page: ft.Page):
                     render_main_page(reload_from_disk=True)
                     break
         except Exception as e:
-            page.show_snack_bar(ft.SnackBar(ft.Text(f"打卡错误: {e}"), bgcolor="red"))
+            page.snack_bar = ft.SnackBar(ft.Text(f"打卡错误: {e}"), bgcolor="red")
+            page.snack_bar.open = True
+            page.update()
 
     def do_add_task(name, days_str):
         try:
             if not days_str.isdigit():
-                page.show_snack_bar(ft.SnackBar(ft.Text("天数必须是数字")))
+                page.snack_bar = ft.SnackBar(ft.Text("天数必须是数字"))
+                page.snack_bar.open = True
+                page.update()
                 return
 
             days = int(days_str)
             
-            # 【一加适配】强制类型转换，防止 ColorOS 的序列化器报错
             new_task = {
                 "id": str(datetime.now().timestamp()),
                 "name": str(name),
@@ -137,19 +142,18 @@ def main(page: ft.Page):
             app_data["tasks"].append(new_task)
             save_data(app_data)
             
-            # 强制刷新主页
             render_main_page(msg="创建成功", reload_from_disk=True)
             
         except Exception as e:
             traceback.print_exc()
-            page.show_snack_bar(ft.SnackBar(ft.Text(f"创建崩溃: {e}"), bgcolor="red"))
+            page.snack_bar = ft.SnackBar(ft.Text(f"创建异常: {e}"), bgcolor="red")
+            page.snack_bar.open = True
+            page.update()
 
-    # ================= 4. UI 渲染 (高性能版) =================
+    # ================= 4. UI 渲染 (双页签版) =================
     
     def render_main_page(e=None, msg=None, reload_from_disk=False):
         try:
-            # 这里的 clean 是最危险的，如果数据加载慢就会闪白屏
-            # 我们先加载数据，再 clean
             if reload_from_disk:
                 fresh_data = load_data()
                 app_data.clear()
@@ -157,15 +161,15 @@ def main(page: ft.Page):
 
             page.clean()
             
-            # 任务列表容器
-            tasks_column = ft.Column(spacing=10) # 移除 scroll，交给外层处理
+            # --- 1. 任务列表视图 ---
+            tasks_column = ft.Column(spacing=10, scroll="auto") 
             
             if not app_data["tasks"]:
                 tasks_column.controls.append(
                     ft.Container(
-                        content=ft.Text("暂无任务，点 + 号创建", color="grey", size=16),
+                        content=ft.Text("暂无挑战，点 + 号开启", color="grey", size=16),
                         alignment=ft.alignment.center,
-                        padding=50
+                        padding=40
                     )
                 )
 
@@ -173,13 +177,11 @@ def main(page: ft.Page):
             
             for task in app_data["tasks"]:
                 try:
-                    # 容错获取
                     t_id = task.get('id')
                     t_name = str(task.get('name', '任务'))
                     t_days = task.get('days', 0)
                     is_done = task.get("checked_today", False) and task.get("last_interaction") == today_str
                     
-                    # 闭包
                     def on_click_checkin(e, t_id=t_id):
                         do_check_in(t_id)
 
@@ -206,38 +208,94 @@ def main(page: ft.Page):
                 except:
                     continue
 
-            # 浮动按钮
-            page.floating_action_button = ft.FloatingActionButton(
-                icon="add", bgcolor="teal", on_click=render_add_page
-            )
+            # --- 2. 成就墙视图 ---
+            achievements_column = ft.Column(spacing=10, scroll="auto")
             
-            # 页面组装
+            if "achievements" in app_data and app_data["achievements"]:
+                for ach in app_data["achievements"]:
+                    try:
+                        achievements_column.controls.append(
+                            ft.Card(
+                                elevation=1,
+                                content=ft.ListTile(
+                                    leading=ft.Icon(ft.Icons.EMOJI_EVENTS, color="amber", size=30),
+                                    title=ft.Text(f"{ach.get('name','未知')}", weight="bold"),
+                                    subtitle=ft.Text(f"完成于: {ach.get('finished_at','?')}", size=12),
+                                )
+                            )
+                        )
+                    except:
+                        continue
+            else:
+                achievements_column.controls.append(
+                    ft.Container(
+                        content=ft.Text("还没有成就，加油完成一个任务吧！", color="grey"),
+                        alignment=ft.alignment.center,
+                        padding=40
+                    )
+                )
+
+            # --- 3. 组装 Tabs ---
+            tabs = ft.Tabs(
+                selected_index=0,
+                animation_duration=300,
+                tabs=[
+                    ft.Tab(
+                        text="进行中", 
+                        icon=ft.Icons.LIST, 
+                        content=ft.Container(
+                            content=tasks_column, 
+                            padding=10
+                        )
+                    ),
+                    ft.Tab(
+                        text="成就墙", 
+                        icon=ft.Icons.EMOJI_EVENTS, 
+                        content=ft.Container(
+                            content=achievements_column, 
+                            padding=10
+                        )
+                    ),
+                ],
+                expand=True, # 撑满剩余空间
+            )
+
+            # --- 4. 页面主体 ---
             page.add(
                 ft.SafeArea(
                     ft.Column([
-                        ft.Container(height=10), # 顶部留白适配挖孔
-                        ft.Text("  逆序打卡", size=28, weight="bold", color="teal"),
-                        ft.Divider(),
-                        ft.Container(
-                            content=tasks_column,
-                            padding=10,
-                            expand=True 
-                        )
-                    ], scroll="auto", expand=True) # 让整个页面可滚动
+                        ft.Container(height=5),
+                        ft.Text("  逆序打卡", size=26, weight="bold", color="teal"),
+                        ft.Divider(height=1, thickness=1),
+                        # Tabs 放在这里，利用 expand 撑满屏幕
+                        ft.Container(content=tabs, expand=True) 
+                    ], expand=True)
                 )
+            )
+
+            # 浮动按钮只在第一个Tab显示逻辑比较复杂，这里简化为全局显示
+            # 或者你可以选择只在主页渲染时添加
+            page.floating_action_button = ft.FloatingActionButton(
+                icon=ft.Icons.ADD, bgcolor="teal", on_click=render_add_page
             )
             
             if msg:
-                page.show_snack_bar(ft.SnackBar(ft.Text(msg)))
+                page.snack_bar = ft.SnackBar(ft.Text(msg))
+                page.snack_bar.open = True
+            
+            page.update()
             
         except Exception as e:
-            page.add(ft.Text(f"主页渲染失败: {e}", color="red"))
+            # 最后的防线
+            print(f"渲染崩溃: {e}")
+            page.clean()
+            page.add(ft.Text(f"界面加载失败: {e}", color="red"))
+            page.update()
 
     def render_add_page(e=None):
         page.clean()
         page.floating_action_button = None
         
-        # 【重要】autofocus=False，防止一加手机键盘弹出卡死页面
         name_field = ft.TextField(label="任务名称", autofocus=False)
         days_field = ft.TextField(label="天数 (数字)", keyboard_type="number")
 
@@ -270,6 +328,7 @@ def main(page: ft.Page):
                 )
             )
         )
+        page.update()
 
     render_main_page()
 
