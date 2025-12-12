@@ -275,54 +275,88 @@ def main(page: ft.Page):
             page.update()
 
     # --- 场景 B: 添加页 ---
+   # --- 场景 B: 添加页 (带屏幕日志版) ---
     def render_add_page(e=None):
         page.clean()
         page.floating_action_button = None
         
         name_field = ft.TextField(label="任务名称", autofocus=True)
         days_field = ft.TextField(label="目标天数 (纯数字)", keyboard_type="number")
-
-        # ============================================================
-        # 【核心修改区域】这里加入了强力调试代码
-        # ============================================================
-       #替换原来的 on_confirm 函数
-        def on_confirm(e):
-            # === 1. 视觉调试法：一点击立刻改按钮颜色 ===
-            # 如果按钮变红了，说明 Python 代码 100% 运行了，只是日志被吞了。
-            # 如果按钮没变色，说明点击事件根本没触发（可能是遮挡或 UI 库 bug）。
-            e.control.text = "正在运行..."
-            e.control.bgcolor = "red" 
-            e.control.update() 
+        
+        # === 新增：屏幕上的日志显示区 ===
+        log_column = ft.Column(scroll="always", height=200) # 给它高度，允许滚动
+        
+        def screen_log(msg):
+            """把日志直接写在手机屏幕上"""
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            log_msg = f"[{timestamp}] {msg}"
+            print(log_msg) # 同时也尝试打印到后台
             
-            # 引入 logging 模块，这比 print 更强力，很难被系统屏蔽
-            import logging
-            logging.error(">>>>>>>>>> 调试：按钮被点击了！ <<<<<<<<<<")
+            # 添加红色的字到屏幕上
+            log_column.controls.insert(0, ft.Text(log_msg, color="red", size=12, font_family="monospace"))
+            try:
+                page.update()
+            except:
+                pass
+
+        def on_confirm(e):
+            screen_log(">>> 按钮被点击，开始执行...")
+            e.control.text = "运行中..."
+            e.control.bgcolor = "orange"
+            e.control.update()
 
             try:
-                # 模拟延时，让你看清按钮变红
-                import time
-                time.sleep(0.5)
-
+                # 1. 校验
                 if not name_field.value:
-                    logging.error(">>> 校验失败: 名字为空")
+                    screen_log("❌ 失败: 名字为空")
                     name_field.error_text = "请输入任务名称"
                     page.update()
                     return
                 if not days_field.value:
-                    logging.error(">>> 校验失败: 天数为空")
+                    screen_log("❌ 失败: 天数为空")
                     days_field.error_text = "请输入目标天数"
                     page.update()
                     return
                 
-                logging.error(">>> 校验通过，调用 do_add_task")
-                do_add_task(name_field.value, days_field.value)
+                screen_log("✅ 校验通过")
+                
+                # 2. 准备数据
+                days = int(days_field.value)
+                new_task = {
+                    "id": str(datetime.now().timestamp()),
+                    "name": str(name_field.value),
+                    "days": days,
+                    "original_target": days,
+                    "created_at": datetime.now().strftime("%Y-%m-%d"),
+                    "last_interaction": datetime.now().strftime("%Y-%m-%d"),
+                    "checked_today": False
+                }
+                screen_log(f"📋 数据已生成: {new_task['name']}")
+
+                # 3. 尝试写入内存
+                app_data["tasks"].append(new_task)
+                screen_log("💾 已追加到内存列表")
+
+                # 4. 尝试保存到手机存储 (最容易崩的地方)
+                screen_log("⏳ 正在调用 client_storage...")
+                # ------------------------------------------------
+                # 临时测试：如果你怀疑是存储坏了，把下面这行注释掉试试
+                page.client_storage.set("daka_data", app_data)
+                # ------------------------------------------------
+                screen_log("✅ client_storage 保存成功！")
+                
+                # 5. 跳转
+                screen_log("🚀 准备跳转回主页...")
+                import time
+                time.sleep(1) # 故意停顿1秒让你看清日志
+                render_main_page(msg="任务创建成功！")
                 
             except Exception as err:
-                logging.error(f">>> 崩溃: {err}")
-                traceback.print_exc()
-                page.snack_bar = ft.SnackBar(ft.Text(f"崩溃: {str(err)}"), bgcolor="red")
-                page.snack_bar.open = True
-                page.update()
+                # 如果崩了，这里会显示详细原因
+                import traceback
+                err_str = traceback.format_exc()
+                screen_log(f"💥 严重崩溃: {str(err)}")
+                screen_log(f"详情: {err_str}") # 把堆栈也打出来
 
         def on_cancel(e):
             render_main_page()
@@ -330,39 +364,33 @@ def main(page: ft.Page):
         content_column = ft.Column(
             [
                 ft.Icon(ft.Icons.ADD_TASK, size=64, color="teal"),
-                ft.Container(height=20),
-                ft.Text("新建挑战", size=24, weight="bold"),
-                ft.Container(height=30),
+                ft.Text("新建挑战 (调试模式)", size=24, weight="bold"),
                 name_field,
-                ft.Container(height=10),
                 days_field,
-                ft.Container(height=40),
                 ft.Row([
-                    ft.ElevatedButton("取消", on_click=on_cancel, bgcolor="grey", color="white", width=120, height=50),
-                    # 注意：这里绑定的是新的 on_confirm 函数
-                    ft.ElevatedButton("确定创建", on_click=on_confirm, bgcolor="teal", color="white", width=120, height=50),
-                ], alignment="center", spacing=20)
+                    ft.ElevatedButton("取消", on_click=on_cancel),
+                    ft.ElevatedButton("确定创建", on_click=on_confirm, bgcolor="teal", color="white"),
+                ], alignment="center"),
+                ft.Divider(),
+                ft.Text("--- 下面是运行日志 ---", size=10, color="grey"),
+                ft.Container(
+                    content=log_column,
+                    bgcolor=ft.colors.GREY_100,
+                    border=ft.border.all(1, "grey"),
+                    padding=10,
+                    border_radius=5
+                )
             ],
-            alignment=ft.MainAxisAlignment.CENTER,
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             scroll="auto"
         )
         
-        page.add(
-            ft.SafeArea(
-                ft.Container(
-                    content=content_column,
-                    padding=20,
-                    alignment=ft.alignment.center,
-                    expand=True
-                )
-            )
-        )
+        page.add(ft.SafeArea(ft.Container(content=content_column, padding=20, expand=True)))
         page.update()
 
     render_main_page()
 
 if __name__ == "__main__":
     ft.app(target=main)
+
 
 
