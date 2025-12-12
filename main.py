@@ -5,18 +5,15 @@ import time
 
 def main(page: ft.Page):
     
-    # ================= 1. 一加13 专属适配配置 =================
+    # ================= 1. 一加13 专属配置 (保持不变) =================
     page.title = "逆序打卡"
     page.theme_mode = "light"
-    # 【核心】安卓需要滚动容错，防止内容溢出白屏
-    page.scroll = "auto" 
+    # 【绝对不能改】必须设为 None，否则 Tabs 会因为高度计算冲突导致白屏
+    page.scroll = None 
     page.padding = 0 
-    
-    # 使用系统默认字体，确保兼容性
     page.theme = ft.Theme()
 
-    # ================= 2. 数据层 =================
-    
+    # ================= 2. 数据层 (保持不变) =================
     def load_data():
         try:
             data = page.client_storage.get("daka_data")
@@ -24,62 +21,46 @@ def main(page: ft.Page):
                 return {"tasks": [], "achievements": []}
             return data
         except Exception as e:
-            print(f">>> 读取出错: {e}")
             return {"tasks": [], "achievements": []}
 
     def save_data(data):
         try:
             page.client_storage.set("daka_data", data)
         except Exception as e:
-            page.snack_bar = ft.SnackBar(
-                ft.Text(f"存储失败: {str(e)}"), 
-                bgcolor="red",
-                duration=5000
-            )
+            # 【修复1】改回标准写法，防止报错
+            page.snack_bar = ft.SnackBar(ft.Text(f"存储异常: {str(e)}"), bgcolor="red")
             page.snack_bar.open = True
             page.update()
 
-    # 初始化数据
     app_data = load_data()
 
-    # --- 跨天逻辑 ---
+    # 跨天逻辑
     def process_penalty_logic():
         try:
             today_str = datetime.now().strftime("%Y-%m-%d")
             today_date = datetime.strptime(today_str, "%Y-%m-%d")
             data_changed = False
-            
             for task in app_data["tasks"]:
                 last_inter_str = task.get("last_interaction", today_str)
                 if not last_inter_str: last_inter_str = today_str
-                
                 last_date = datetime.strptime(last_inter_str, "%Y-%m-%d")
                 delta_days = (today_date - last_date).days
-                
                 if delta_days > 0:
                     penalty = 0
-                    if not task.get("checked_today", False):
-                        penalty += 1
-                    if delta_days > 1:
-                        penalty += (delta_days - 1)
-                    
+                    if not task.get("checked_today", False): penalty += 1
+                    if delta_days > 1: penalty += (delta_days - 1)
                     if penalty > 0:
                         task['days'] += penalty
                         data_changed = True
-                    
                     task['checked_today'] = False
                     task['last_interaction'] = today_str
                     data_changed = True
-            
-            if data_changed:
-                save_data(app_data)
-        except Exception:
-            pass
+            if data_changed: save_data(app_data)
+        except: pass
 
     process_penalty_logic()
 
     # ================= 3. 业务逻辑 =================
-    
     def get_day_color(days):
         if days < 5: return "green"
         elif days < 10: return "blue"
@@ -90,55 +71,47 @@ def main(page: ft.Page):
             for task in app_data["tasks"]:
                 if task['id'] == task_id:
                     task['days'] -= 1
-                    
                     if task['days'] <= 0:
-                        # 任务完成：移出任务列表，加入成就墙
+                        # 任务完成：移入成就墙
                         app_data["tasks"].remove(task)
-                        
-                        # 确保 achievements 列表存在
-                        if "achievements" not in app_data:
-                            app_data["achievements"] = []
-                            
-                        app_data["achievements"].insert(0, { # 插到最前面
+                        if "achievements" not in app_data: app_data["achievements"] = []
+                        app_data["achievements"].insert(0, {
                             "name": task['name'],
                             "created_at": task.get('created_at', '?'),
                             "finished_at": datetime.now().strftime("%Y-%m-%d")
                         })
-                        
-                        page.snack_bar = ft.SnackBar(ft.Text(f"🎉 恭喜！{task['name']} 已完成！"))
+                        # 【修复1】改回标准写法
+                        page.snack_bar = ft.SnackBar(ft.Text(f"🎉 {task['name']} 已完成！"))
                         page.snack_bar.open = True
                     else:
                         task['checked_today'] = True
                         task['last_interaction'] = datetime.now().strftime("%Y-%m-%d")
-                    
                     save_data(app_data)
                     render_main_page(reload_from_disk=True)
                     break
         except Exception as e:
-            page.snack_bar = ft.SnackBar(ft.Text(f"打卡错误: {e}"), bgcolor="red")
+            # 【修复1】改回标准写法
+            page.snack_bar = ft.SnackBar(ft.Text(f"错误: {e}"), bgcolor="red")
             page.snack_bar.open = True
             page.update()
 
     def do_add_task(name, days_str):
         try:
             if not days_str.isdigit():
-                page.snack_bar = ft.SnackBar(ft.Text("天数必须是数字"))
+                page.snack_bar = ft.SnackBar(ft.Text("天数必须是纯数字"), bgcolor="red")
                 page.snack_bar.open = True
                 page.update()
                 return
-
-            days = int(days_str)
             
             new_task = {
                 "id": str(datetime.now().timestamp()),
                 "name": str(name),
-                "days": int(days),
-                "original_target": int(days),
+                "days": int(days_str),
+                "original_target": int(days_str),
                 "created_at": str(datetime.now().strftime("%Y-%m-%d")),
                 "last_interaction": str(datetime.now().strftime("%Y-%m-%d")),
                 "checked_today": False
             }
-            
             app_data["tasks"].append(new_task)
             save_data(app_data)
             
@@ -146,12 +119,12 @@ def main(page: ft.Page):
             
         except Exception as e:
             traceback.print_exc()
-            page.snack_bar = ft.SnackBar(ft.Text(f"创建异常: {e}"), bgcolor="red")
+            # 【修复1】改回标准写法
+            page.snack_bar = ft.SnackBar(ft.Text(f"创建崩溃: {e}"), bgcolor="red")
             page.snack_bar.open = True
             page.update()
 
-    # ================= 4. UI 渲染 (双页签版) =================
-    
+    # ================= 4. UI 渲染 (修复报错 + 恢复成就墙) =================
     def render_main_page(e=None, msg=None, reload_from_disk=False):
         try:
             if reload_from_disk:
@@ -161,137 +134,105 @@ def main(page: ft.Page):
 
             page.clean()
             
-            # --- 1. 任务列表视图 ---
-            tasks_column = ft.Column(spacing=10, scroll="auto") 
-            
+            # --- 构建任务列表 (List View) ---
+            tasks_list = ft.ListView(expand=True, spacing=10, padding=10)
             if not app_data["tasks"]:
-                tasks_column.controls.append(
-                    ft.Container(
-                        content=ft.Text("暂无挑战，点 + 号开启", color="grey", size=16),
-                        alignment=ft.alignment.center,
-                        padding=40
-                    )
+                tasks_list.controls.append(
+                    ft.Container(content=ft.Text("暂无挑战，点 + 号开启", color="grey"), alignment=ft.alignment.center, padding=40)
                 )
-
-            today_str = datetime.now().strftime("%Y-%m-%d")
-            
-            for task in app_data["tasks"]:
-                try:
-                    t_id = task.get('id')
-                    t_name = str(task.get('name', '任务'))
-                    t_days = task.get('days', 0)
-                    is_done = task.get("checked_today", False) and task.get("last_interaction") == today_str
-                    
-                    def on_click_checkin(e, t_id=t_id):
-                        do_check_in(t_id)
-
-                    card = ft.Card(
-                        elevation=2,
-                        content=ft.Container(
-                            padding=15,
-                            content=ft.Row([
-                                ft.Column([
-                                    ft.Text(t_name, size=18, weight="bold"),
-                                    ft.Text(f"剩余 {t_days} 天", color=get_day_color(t_days))
-                                ], expand=True),
-                                ft.ElevatedButton(
-                                    "已完成" if is_done else "打卡",
-                                    disabled=is_done,
-                                    bgcolor="grey" if is_done else "teal",
-                                    color="white",
-                                    on_click=on_click_checkin
-                                )
-                            ])
-                        )
-                    )
-                    tasks_column.controls.append(card)
-                except:
-                    continue
-
-            # --- 2. 成就墙视图 ---
-            achievements_column = ft.Column(spacing=10, scroll="auto")
-            
-            if "achievements" in app_data and app_data["achievements"]:
-                for ach in app_data["achievements"]:
+            else:
+                today_str = datetime.now().strftime("%Y-%m-%d")
+                for task in app_data["tasks"]:
                     try:
-                        achievements_column.controls.append(
-                            ft.Card(
-                                elevation=1,
-                                content=ft.ListTile(
-                                    leading=ft.Icon(ft.Icons.EMOJI_EVENTS, color="amber", size=30),
-                                    title=ft.Text(f"{ach.get('name','未知')}", weight="bold"),
-                                    subtitle=ft.Text(f"完成于: {ach.get('finished_at','?')}", size=12),
-                                )
+                        t_id = task.get('id')
+                        t_name = str(task.get('name', '任务'))
+                        t_days = task.get('days', 0)
+                        is_done = task.get("checked_today", False) and task.get("last_interaction") == today_str
+                        
+                        def on_click_checkin(e, t_id=t_id):
+                            do_check_in(t_id)
+
+                        card = ft.Card(
+                            elevation=2,
+                            content=ft.Container(
+                                padding=15,
+                                content=ft.Row([
+                                    ft.Column([
+                                        ft.Text(t_name, size=18, weight="bold"),
+                                        ft.Text(f"剩余 {t_days} 天", color=get_day_color(t_days))
+                                    ], expand=True),
+                                    ft.ElevatedButton(
+                                        "已完成" if is_done else "打卡",
+                                        disabled=is_done,
+                                        bgcolor="grey" if is_done else "teal",
+                                        color="white",
+                                        on_click=on_click_checkin
+                                    )
+                                ])
                             )
                         )
-                    except:
-                        continue
-            else:
-                achievements_column.controls.append(
-                    ft.Container(
-                        content=ft.Text("还没有成就，加油完成一个任务吧！", color="grey"),
-                        alignment=ft.alignment.center,
-                        padding=40
+                        tasks_list.controls.append(card)
+                    except: continue
+
+            # --- 【修复2】构建成就墙列表 ---
+            achieve_list = ft.ListView(expand=True, spacing=10, padding=10)
+            if "achievements" in app_data and app_data["achievements"]:
+                for ach in app_data["achievements"]:
+                    achieve_list.controls.append(
+                        ft.Card(
+                            elevation=1,
+                            content=ft.ListTile(
+                                leading=ft.Icon(ft.Icons.EMOJI_EVENTS, color="amber"),
+                                title=ft.Text(f"{ach.get('name','未知')}", weight="bold"),
+                                subtitle=ft.Text(f"完成于: {ach.get('finished_at','?')}", size=12),
+                            )
+                        )
                     )
+            else:
+                achieve_list.controls.append(
+                    ft.Container(content=ft.Text("还没有成就", color="grey"), alignment=ft.alignment.center, padding=40)
                 )
 
-            # --- 3. 组装 Tabs ---
+            # --- 【修复2】恢复 Tabs 组件 ---
             tabs = ft.Tabs(
                 selected_index=0,
-                animation_duration=300,
+                animation_duration=0, # 关闭动画，防闪烁
                 tabs=[
-                    ft.Tab(
-                        text="进行中", 
-                        icon=ft.Icons.LIST, 
-                        content=ft.Container(
-                            content=tasks_column, 
-                            padding=10
-                        )
-                    ),
-                    ft.Tab(
-                        text="成就墙", 
-                        icon=ft.Icons.EMOJI_EVENTS, 
-                        content=ft.Container(
-                            content=achievements_column, 
-                            padding=10
-                        )
-                    ),
+                    ft.Tab(text="进行中", icon=ft.Icons.LIST, content=tasks_list),
+                    ft.Tab(text="成就墙", icon=ft.Icons.EMOJI_EVENTS, content=achieve_list),
                 ],
                 expand=True, # 撑满剩余空间
             )
 
-            # --- 4. 页面主体 ---
+            # 页面组装
             page.add(
                 ft.SafeArea(
                     ft.Column([
-                        ft.Container(height=5),
+                        ft.Container(height=10),
                         ft.Text("  逆序打卡", size=26, weight="bold", color="teal"),
                         ft.Divider(height=1, thickness=1),
-                        # Tabs 放在这里，利用 expand 撑满屏幕
-                        ft.Container(content=tabs, expand=True) 
-                    ], expand=True)
+                        tabs # Tab 放在 expand 的 Column 里，解决白屏问题
+                    ], expand=True) 
                 )
             )
 
-            # 浮动按钮只在第一个Tab显示逻辑比较复杂，这里简化为全局显示
-            # 或者你可以选择只在主页渲染时添加
             page.floating_action_button = ft.FloatingActionButton(
                 icon=ft.Icons.ADD, bgcolor="teal", on_click=render_add_page
             )
             
             if msg:
+                # 【修复1】改回标准写法
                 page.snack_bar = ft.SnackBar(ft.Text(msg))
                 page.snack_bar.open = True
             
             page.update()
             
         except Exception as e:
-            # 最后的防线
-            print(f"渲染崩溃: {e}")
             page.clean()
-            page.add(ft.Text(f"界面加载失败: {e}", color="red"))
+            page.add(ft.Text(f"渲染失败: {e}", color="red"))
             page.update()
 
+    # --- 添加页 (保持你喜欢的话痨版逻辑) ---
     def render_add_page(e=None):
         page.clean()
         page.floating_action_button = None
@@ -300,8 +241,25 @@ def main(page: ft.Page):
         days_field = ft.TextField(label="天数 (数字)", keyboard_type="number")
 
         def on_confirm(e):
-            if not name_field.value or not days_field.value:
+            e.control.text = "检测中..."
+            e.control.update()
+            
+            if not name_field.value:
+                e.control.text = "创建"
+                e.control.update()
+                page.snack_bar = ft.SnackBar(ft.Text("❌ 请输入任务名称！"), bgcolor="red")
+                page.snack_bar.open = True
+                page.update()
                 return
+
+            if not days_field.value:
+                e.control.text = "创建"
+                e.control.update()
+                page.snack_bar = ft.SnackBar(ft.Text("❌ 请输入天数！"), bgcolor="red")
+                page.snack_bar.open = True
+                page.update()
+                return
+
             e.control.text = "保存中..."
             e.control.update()
             do_add_task(name_field.value, days_field.value)
@@ -324,7 +282,7 @@ def main(page: ft.Page):
                             ft.ElevatedButton("取消", on_click=on_cancel),
                             ft.ElevatedButton("创建", on_click=on_confirm, bgcolor="teal", color="white"),
                         ], alignment="center")
-                    ], horizontal_alignment="center")
+                    ], horizontal_alignment="center", scroll="auto")
                 )
             )
         )
