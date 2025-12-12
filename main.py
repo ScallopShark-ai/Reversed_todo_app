@@ -199,63 +199,46 @@ def main(page: ft.Page):
             page.update()
 
     def do_add_task(name, days_str):
-
         try:
-
             if not days_str.isdigit():
-
-                # 修复点4
-
                 page.snack_bar = ft.SnackBar(ft.Text("天数必须是数字"))
-
                 page.snack_bar.open = True
-
                 page.update()
-
                 return
 
-            days = int(days_str)
-
-            # 【一加适配】强制类型转换
-
+            # --- 关键修改：先在内存中构建对象 ---
             new_task = {
-
                 "id": str(datetime.now().timestamp()),
-
                 "name": str(name),
-
-                "days": int(days),
-
-                "original_target": int(days),
-
-                "created_at": str(datetime.now().strftime("%Y-%m-%d")),
-
-                "last_interaction": str(datetime.now().strftime("%Y-%m-%d")),
-
+                "days": int(days_str),
+                "original_target": int(days_str),
+                "created_at": datetime.now().strftime("%Y-%m-%d"),
+                "last_interaction": datetime.now().strftime("%Y-%m-%d"),
                 "checked_today": False
-
             }
-
+            
+            # 1. 先更新内存
             app_data["tasks"].append(new_task)
-
+            
+            # 2. 尝试保存 (即使保存失败，内存里也有数据，界面能显示出来)
             save_data(app_data)
 
-            # 强制刷新主页
-
-            render_main_page(msg="创建成功", reload_from_disk=True)
+            # 3. 渲染主页
+            # 【核心修复】这里千万不要 reload_from_disk=True，否则会覆盖掉刚加进内存的任务
+            render_main_page(msg="创建成功", reload_from_disk=False)
 
         except Exception as e:
-
             traceback.print_exc()
-
-            # 修复点5
-
-            page.snack_bar = ft.SnackBar(ft.Text(f"创建崩溃: {e}"), bgcolor="red")
-
+            # 如果出错，不要跳转页面，停留在当前页显示错误
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"创建失败: {e}"), 
+                bgcolor="red",
+                duration=5000 # 显示久一点
+            )
             page.snack_bar.open = True
-
             page.update()
 
+        
    # ================= 4. UI 渲染 (修复白屏版) =================
 
     def render_main_page(e=None, msg=None, reload_from_disk=False):
@@ -394,41 +377,52 @@ def main(page: ft.Page):
     def render_add_page(e=None):
         page.clean()
         page.floating_action_button = None
-        # autofocus=False，防止一加手机键盘弹出卡死页面
+        
         name_field = ft.TextField(label="任务名称", autofocus=False)
         days_field = ft.TextField(label="天数 (数字)", keyboard_type="number")
+
         def on_confirm(e):
             if not name_field.value or not days_field.value:
+                page.snack_bar = ft.SnackBar(ft.Text("请填写完整信息"))
+                page.snack_bar.open = True
+                page.update()
                 return
+                
+            # 给用户一点反馈，防止连点
             e.control.text = "保存中..."
+            e.control.disabled = True
             e.control.update()
+            
+            # 稍微延迟一下，给 UI 线程喘息时间（可选，但在某些安卓机上有奇效）
+            time.sleep(0.1) 
+            
             do_add_task(name_field.value, days_field.value)
 
         def on_cancel(e):
-
             render_main_page()
 
+        # 【修复】外层容器必须可以滚动，否则键盘弹出会遮挡或导致点击无效
         page.add(
             ft.SafeArea(
-                ft.Container(
-                    padding=30,
-                    content=ft.Column([
-
-                        ft.Icon(ft.Icons.ADD_TASK, size=80, color="teal"),
-                        ft.Container(height=20),
-                        name_field,
-                        ft.Container(height=20),
-                        days_field,
-                        ft.Container(height=40),
-                        ft.Row([
-                            ft.ElevatedButton("取消", on_click=on_cancel),
-                            ft.ElevatedButton("创建", on_click=on_confirm, bgcolor="teal", color="white"),
-                        ], alignment="center")
-                    ], horizontal_alignment="center")
-                )
+                ft.Column([
+                    ft.Container(height=20), # 顶部留白
+                    ft.Icon(ft.Icons.ADD_TASK, size=80, color="teal"),
+                    ft.Container(height=20),
+                    name_field,
+                    ft.Container(height=20),
+                    days_field,
+                    ft.Container(height=40),
+                    ft.Row([
+                        ft.ElevatedButton("取消", on_click=on_cancel),
+                        ft.ElevatedButton("创建", on_click=on_confirm, bgcolor="teal", color="white"),
+                    ], alignment="center"),
+                    # 底部增加留白，防止被键盘顶死
+                    ft.Container(height=300) 
+                ], 
+                horizontal_alignment="center",
+                scroll="auto") # 【关键】允许滚动
             )
         )
-        # 这里补一个 update 确保界面刷新
         page.update()
     render_main_page()
 if __name__ == "__main__":
