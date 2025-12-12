@@ -277,6 +277,7 @@ def main(page: ft.Page):
     # --- 场景 B: 添加页 ---
    # --- 场景 B: 添加页 (带屏幕日志版) ---
 # --- 场景 B: 添加页 (防白屏安全版) ---
+   # --- 场景 B: 添加页 (防白屏安全版) ---
     def render_add_page(e=None):
         try:
             # 1. 先尝试清空页面
@@ -355,6 +356,7 @@ def main(page: ft.Page):
 
 if __name__ == "__main__":
     ft.app(target=main)
+
 
 
 
