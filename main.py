@@ -172,9 +172,9 @@ def main(page: ft.Page):
 
     def get_day_color(days):
 
-        if days <= 5: return "green"
+        if days < 5: return "green"
 
-        elif days <= 10: return "blue"
+        elif days < 10: return "blue"
 
         return "black"
 
@@ -421,8 +421,8 @@ def main(page: ft.Page):
                 except:
 
                     continue
-
             achievements_column = ft.Column(spacing=10)
+            
             if app_data.get("achievements"):
                 for ach in app_data["achievements"]:
                     try:
@@ -466,6 +466,7 @@ def main(page: ft.Page):
                 # 注意：这里不加 expand=True，因为外层已经是 scroll="auto"
                 # 让 Tabs 自然填充高度即可，防止冲突
             )
+
 
             page.floating_action_button = ft.FloatingActionButton(
 
@@ -545,63 +546,19 @@ def main(page: ft.Page):
 
         days_field = ft.TextField(label="天数 (数字)", keyboard_type="number")
 
-        log_text = ft.Text("准备就绪...", color="grey", size=12)
-        
-        def update_log(msg, color="black"):
-            print(msg) # 打印到后台
-            log_text.value = f"{datetime.now().strftime('%H:%M:%S')} - {msg}"
-            log_text.color = color
-            log_text.update()
 
-        # --- 强力清理按钮 ---
-        def clear_cache(e):
-            try:
-                page.client_storage.clear()
-                # 重置内存
-                app_data["tasks"] = []
-                app_data["achievements"] = []
-                update_log("缓存已强制清空！旧数据已删除。", "green")
-            except Exception as ex:
-                update_log(f"清空失败: {ex}", "red")
 
         def on_confirm(e):
-            update_log("正在检测输入...", "blue")
-            if not name_field.value:
-                update_log("❌ 错误：任务名称不能为空", "red")
-                return
-            if not days_field.value:
-                update_log("❌ 错误：天数不能为空", "red")                
+
+            if not name_field.value or not days_field.value:
+
                 return
 
-            try:
-                update_log("正在构建数据...", "blue")
-                
-                # 构造新任务
-                new_task = {
-                    "id": str(datetime.now().timestamp()),
-                    "name": str(name_field.value),
-                    "days": int(days_field.value),
-                    "original_target": int(days_field.value),
-                    "created_at": str(datetime.now().strftime("%Y-%m-%d")),
-                    "last_interaction": str(datetime.now().strftime("%Y-%m-%d")),
-                    "checked_today": False
-                }
-                
-                # 确保内存列表存在
-                if "tasks" not in app_data: app_data["tasks"] = []
-                app_data["tasks"].append(new_task)
-                
-                update_log("正在写入存储...", "blue")
-                save_data(app_data)
-                
-                update_log("✅ 成功！正在跳转...", "green")
-                time.sleep(0.5) # 让你看清成功提示
-                render_main_page(msg="任务创建成功！", reload_from_disk=True)
-                
-            except Exception as ex:
-                # 把最底层的错误显示出来！
-                traceback.print_exc()
-                update_log(f"💥 严重崩溃: {str(ex)}", "red")
+            e.control.text = "保存中..."
+
+            e.control.update()
+
+            do_add_task(name_field.value, days_field.value)
 
 
 
@@ -639,11 +596,8 @@ def main(page: ft.Page):
 
                             ft.ElevatedButton("创建", on_click=on_confirm, bgcolor="teal", color="white"),
 
-                        ], alignment="center"),
+                        ], alignment="center")
 
-                        ft.Container(height=30),
-                        ft.Divider(),
-                        ft.TextButton("⚠️如果一直创建失败，点我清空缓存", on_click=clear_cache, style=ft.ButtonStyle(color="red"))
                     ], horizontal_alignment="center")
 
                 )
