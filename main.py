@@ -256,239 +256,140 @@ def main(page: ft.Page):
 
             page.update()
 
-    # ================= 4. UI 渲染 (修复报错版) =================
+   # ================= 4. UI 渲染 (修复白屏版) =================
 
     def render_main_page(e=None, msg=None, reload_from_disk=False):
-
         try:
-
             if reload_from_disk:
-
                 fresh_data = load_data()
-
                 app_data.clear()
-
                 app_data.update(fresh_data)
 
             page.clean()
 
-            tasks_column = ft.Column(spacing=10)
+            # 【改动1】使用 ListView 替代 Column，并开启 expand=True
+            # ListView 自带滚动且性能更好，expand=True 让它在 Tab 内部撑满
+            tasks_list = ft.ListView(expand=True, spacing=10)
 
             if not app_data["tasks"]:
-
-                tasks_column.controls.append(
-
+                tasks_list.controls.append(
                     ft.Container(
-
                         content=ft.Text("暂无任务，点 + 号创建", color="grey", size=16),
-
                         alignment=ft.alignment.center,
-
                         padding=50
-
                     )
-
                 )
 
             today_str = datetime.now().strftime("%Y-%m-%d")
 
             for task in app_data["tasks"]:
-
                 try:
-
                     t_id = task.get('id')
-
                     t_name = str(task.get('name', '任务'))
-
                     t_days = task.get('days', 0)
-
                     is_done = task.get("checked_today", False) and task.get("last_interaction") == today_str
 
                     def on_click_checkin(e, t_id=t_id):
-
                         do_check_in(t_id)
 
                     card = ft.Card(
-
                         elevation=2,
-
                         content=ft.Container(
-
                             padding=15,
-
                             content=ft.Row([
-
                                 ft.Column([
-
                                     ft.Text(t_name, size=18, weight="bold"),
-
                                     ft.Text(f"剩余 {t_days} 天", color=get_day_color(t_days))
-
                                 ], expand=True),
-
                                 ft.ElevatedButton(
-
                                     "已完成" if is_done else "打卡",
-
                                     disabled=is_done,
-
                                     bgcolor="grey" if is_done else "teal",
-
                                     color="white",
-
                                     on_click=on_click_checkin
-
                                 )
-
                             ])
-
                         )
-
                     )
-
-                    tasks_column.controls.append(card)
-
+                    tasks_list.controls.append(card)
                 except:
-
                     continue
 
-            achievements_column = ft.Column(spacing=10)
+            # 【改动2】同样将成就墙改为 ListView
+            achievements_list = ft.ListView(expand=True, spacing=10)
 
             if app_data.get("achievements"):
-
                 for ach in app_data["achievements"]:
-
                     try:
-
-                        achievements_column.controls.append(
-
+                        achievements_list.controls.append(
                             ft.Card(
-
                                 elevation=1,
-
                                 content=ft.ListTile(
-
                                     leading=ft.Icon(ft.Icons.EMOJI_EVENTS, color="amber"),
-
                                     title=ft.Text(f"{ach.get('name','未知')}", weight="bold"),
-
                                     subtitle=ft.Text(f"完成于: {ach.get('finished_at','?')}", size=12),
-
                                 )
-
                             )
-
                         )
-
                     except:
-
                         continue
-
             else:
-
-                achievements_column.controls.append(
-
+                achievements_list.controls.append(
                     ft.Container(
-
                         content=ft.Text("还没有成就，加油！", color="grey", size=16),
-
                         alignment=ft.alignment.center,
-
                         padding=50
-
                     )
-
                 )
 
-            # --- 3. 使用 Tabs 将两者整合 ---
-
+            # --- 3. Tabs 整合 ---
             tabs = ft.Tabs(
-
                 selected_index=0,
-
                 animation_duration=300,
-
+                expand=True, # 【关键】让 Tabs 撑满剩余空间
                 tabs=[
-
                     ft.Tab(
-
                         text="进行中",
-
                         icon=ft.Icons.LIST,
-
-                        content=ft.Container(content=tasks_column, padding=10)
-
+                        # Container 不设高度，由内部 ListView 撑开
+                        content=ft.Container(content=tasks_list, padding=10)
                     ),
-
                     ft.Tab(
-
                         text="成就墙",
-
                         icon=ft.Icons.EMOJI_EVENTS,
-
-                        content=ft.Container(content=achievements_column, padding=10)
-
+                        content=ft.Container(content=achievements_list, padding=10)
                     ),
-
                 ],
-
-                # 注意：这里不加 expand=True，因为外层已经是 scroll="auto"
-
-                # 让 Tabs 自然填充高度即可，防止冲突
-
             )
 
             page.floating_action_button = ft.FloatingActionButton(
-
                 icon="add", bgcolor="teal", on_click=render_add_page
-
             )
 
             page.add(
-
                 ft.SafeArea(
-
                     ft.Column([
-
                         ft.Container(height=10),
-
                         ft.Text("  逆序打卡", size=28, weight="bold", color="teal"),
-
                         ft.Divider(),
-
-                        ft.Container(
-
-                            content=tabs,
-
-                            padding=10,
-
-                            expand=True
-
-                        )
-
-                    ], scroll="auto", expand=True)
-
+                        # 直接放入 tabs，它会自动 expand
+                        tabs
+                    ], 
+                    # 【核心修复】外层 Column 禁止滚动，强制撑满屏幕
+                    scroll=None, 
+                    expand=True)
                 )
-
             )
 
             if msg:
-
-                # 修复点6：这里也改回标准写法
-
                 page.snack_bar = ft.SnackBar(ft.Text(msg))
-
                 page.snack_bar.open = True
-
             page.update()
 
         except Exception as e:
-
-            # 紧急避险：如果主页渲染崩了，直接用 print 或者简单的 add 显示
-
             page.clean()
-
-            page.add(ft.Text(f"主页渲染失败: {e}", color="red"))
+            # 这里的 scroll="auto" 没关系，因为是错误页面
+            page.add(ft.Column([ft.Text(f"主页渲染失败: {e}", color="red")], scroll="auto"))
             page.update()
     def render_add_page(e=None):
         page.clean()
