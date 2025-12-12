@@ -4,6 +4,7 @@ import os
 import traceback # 用于捕获错误
 
 def main(page: ft.Page):
+    
     # ================= 1. 基础配置 =================
     # 字体逻辑
     font_name = "my_font"
@@ -101,9 +102,9 @@ def main(page: ft.Page):
                 render_main_page()
                 break
 
-    # 添加任务 (带错误处理)
-    # 添加任务 (修改版)
+    # 添加任务 (带详细调试信息)
     def do_add_task(name, days_str):
+        print(f">>> do_add_task 被调用: name={name}, days={days_str}") # Debug
         try:
             if not days_str.isdigit():
                 page.snack_bar = ft.SnackBar(ft.Text("天数必须是纯数字！"))
@@ -125,11 +126,12 @@ def main(page: ft.Page):
             app_data["tasks"].append(new_task)
             save_data(app_data)
             
-            # 【核心修改点】这里不再直接弹窗，而是调用主页函数并传递消息
+            print(">>> 数据保存成功，准备跳转回主页") # Debug
             render_main_page(msg="任务创建成功！")
             
         except Exception as e:
-            # 出错时可以直接弹，因为没有页面跳转
+            print(">>> do_add_task 内部报错:") # Debug
+            traceback.print_exc() # Debug
             page.snack_bar = ft.SnackBar(ft.Text(f"创建失败: {str(e)}"))
             page.snack_bar.open = True
             page.update()
@@ -137,16 +139,10 @@ def main(page: ft.Page):
     # ================= 4. UI 渲染 (加入 SafeArea) =================
     
     # --- 场景 A: 主页 ---
-    # --- 场景 A: 主页 (修改版) ---
-    # 增加 msg 参数，默认为 None
     def render_main_page(e=None, msg=None):
         try:
             page.clean()
             
-            # ... (这中间的 任务列表构建 代码保持不变，省略以节省空间) ...
-            # ... (请保留你原有的 tasks_column, achievements_column, tabs 构建代码) ...
-            
-            # 这里为了完整性，我把省略号还原成你之前的关键结构，你需要确保中间逻辑还在：
             tasks_column = ft.Column(spacing=10, scroll="auto")
             
             if not app_data["tasks"]:
@@ -160,12 +156,10 @@ def main(page: ft.Page):
 
             today_str = datetime.now().strftime("%Y-%m-%d")
             for task in app_data["tasks"]:
-                # ... (保留你原来的循环逻辑) ...
                 is_done_today = task.get("checked_today", False) and task.get("last_interaction") == today_str
                 btn_text = "已完成" if is_done_today else "打卡"
                 btn_bg = "grey" if is_done_today else "teal"
                 
-                # 闭包修复：需要在循环中绑定变量，否则点击所有按钮都会响应最后一个
                 def on_click_checkin(e, t_id=task['id']):
                     do_check_in(t_id)
 
@@ -201,7 +195,6 @@ def main(page: ft.Page):
                 )
                 tasks_column.controls.append(task_card)
 
-            # 成就墙逻辑保持不变
             achievements_column = ft.Column(spacing=10, scroll="auto")
             for ach in app_data["achievements"]:
                 created_at = ach.get('created_at', '?')
@@ -234,8 +227,6 @@ def main(page: ft.Page):
             
             page.floating_action_button = ft.FloatingActionButton(icon="add", bgcolor="teal", on_click=render_add_page)
             
-            # 【核心修改点】在这里处理消息弹窗
-            # 在 UI 控件全部 add 之后，update 之前，设置 SnackBar
             if msg:
                 page.snack_bar = ft.SnackBar(ft.Text(msg))
                 page.snack_bar.open = True
@@ -243,8 +234,8 @@ def main(page: ft.Page):
             page.update()
             
         except Exception as e:
-            # 捕获主页渲染的错误，防止白屏死得不明不白
-            print(traceback.format_exc())
+            print(">>> render_main_page 渲染错误:") # Debug
+            print(traceback.format_exc()) # Debug
             page.add(ft.Text(f"渲染错误: {e}", color="red"))
             page.update()
 
@@ -254,24 +245,50 @@ def main(page: ft.Page):
         page.floating_action_button = None
         
         name_field = ft.TextField(label="任务名称", autofocus=True)
-        # 【小优化】设置 input_border_radius 让输入框圆润点，适合手机
         days_field = ft.TextField(label="目标天数 (纯数字)", keyboard_type="number")
 
+        # ============================================================
+        # 【核心修改区域】这里加入了强力调试代码
+        # ============================================================
         def on_confirm(e):
-            if not name_field.value:
-                name_field.error_text = "请输入任务名称"
+            print("--------------------------------------------------")
+            print(">>> 调试信息：【确定创建】按钮被点击了！(Button Clicked)") 
+            print(f">>> 当前输入框内容: Name=[{name_field.value}], Days=[{days_field.value}]")
+            print("--------------------------------------------------")
+
+            try:
+                # 1. 校验逻辑
+                if not name_field.value:
+                    print(">>> 校验失败: 名字为空") # Debug
+                    name_field.error_text = "请输入任务名称"
+                    page.update()
+                    return
+                if not days_field.value:
+                    print(">>> 校验失败: 天数为空") # Debug
+                    days_field.error_text = "请输入目标天数"
+                    page.update()
+                    return
+                
+                # 2. 调用逻辑
+                print(">>> 校验通过，正在调用 do_add_task...") # Debug
+                do_add_task(name_field.value, days_field.value)
+                
+            except Exception as err:
+                print(">>> 严重错误：on_confirm 发生异常！") # Debug
+                traceback.print_exc() # 打印详细报错
+                
+                # 尝试把错误显示在手机屏幕上，防止你看不到日志
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"程序崩溃: {str(err)}"), 
+                    bgcolor="red",
+                    duration=5000 # 显示5秒
+                )
+                page.snack_bar.open = True
                 page.update()
-                return
-            if not days_field.value:
-                days_field.error_text = "请输入目标天数"
-                page.update()
-                return
-            
-            # 调用逻辑
-            do_add_task(name_field.value, days_field.value)
 
         def on_cancel(e):
             render_main_page()
+            
         content_column = ft.Column(
             [
                 ft.Icon(ft.Icons.ADD_TASK, size=64, color="teal"),
@@ -284,14 +301,15 @@ def main(page: ft.Page):
                 ft.Container(height=40),
                 ft.Row([
                     ft.ElevatedButton("取消", on_click=on_cancel, bgcolor="grey", color="white", width=120, height=50),
+                    # 注意：这里绑定的是新的 on_confirm 函数
                     ft.ElevatedButton("确定创建", on_click=on_confirm, bgcolor="teal", color="white", width=120, height=50),
                 ], alignment="center", spacing=20)
             ],
             alignment=ft.MainAxisAlignment.CENTER,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            scroll="auto" # 允许内容滚动
+            scroll="auto"
         )
-        # 【核心修复1】同样使用 SafeArea 包裹添加页
+        
         page.add(
             ft.SafeArea(
                 ft.Container(
