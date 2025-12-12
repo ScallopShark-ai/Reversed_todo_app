@@ -8,15 +8,14 @@ def main(page: ft.Page):
     # ================= 1. 一加13 专属适配配置 =================
     page.title = "逆序打卡"
     page.theme_mode = "light"
-    # 【修复白屏核心】安卓需要滚动容错
+    # 【保持原样】你验证过这个配置是最好的
     page.scroll = "auto" 
-    # 【适配挖孔屏】禁用默认 Padding，完全交给 SafeArea 控制
     page.padding = 0 
     
-    # 使用系统默认字体，确保在 OPPO 手机上绝对能显示
+    # 使用系统默认字体
     page.theme = ft.Theme()
 
-    # ================= 2. 数据层 (强壮版) =================
+    # ================= 2. 数据层 (保持不变) =================
     
     def load_data():
         """从手机存储读取数据"""
@@ -34,7 +33,6 @@ def main(page: ft.Page):
         try:
             page.client_storage.set("daka_data", data)
         except Exception as e:
-            # 修复点1：改回标准的 SnackBar 写法
             page.snack_bar = ft.SnackBar(
                 ft.Text(f"存储失败 (请检查权限): {str(e)}"), 
                 bgcolor="red",
@@ -97,13 +95,17 @@ def main(page: ft.Page):
                     
                     if task['days'] <= 0:
                         app_data["tasks"].remove(task)
-                        app_data["achievements"].append({
+                        # 确保 achievements 列表存在
+                        if "achievements" not in app_data:
+                            app_data["achievements"] = []
+                            
+                        app_data["achievements"].insert(0, {
                             "name": task['name'],
                             "created_at": task.get('created_at', '?'),
                             "finished_at": datetime.now().strftime("%Y-%m-%d")
                         })
-                        # 修复点2：改回标准的 SnackBar 写法
-                        page.snack_bar = ft.SnackBar(ft.Text(f"任务 {task['name']} 完成！"))
+                        
+                        page.snack_bar = ft.SnackBar(ft.Text(f"🎉 任务 {task['name']} 完成！"))
                         page.snack_bar.open = True
                         page.update()
                     else:
@@ -114,7 +116,6 @@ def main(page: ft.Page):
                     render_main_page(reload_from_disk=True)
                     break
         except Exception as e:
-            # 修复点3
             page.snack_bar = ft.SnackBar(ft.Text(f"打卡错误: {e}"), bgcolor="red")
             page.snack_bar.open = True
             page.update()
@@ -122,7 +123,6 @@ def main(page: ft.Page):
     def do_add_task(name, days_str):
         try:
             if not days_str.isdigit():
-                # 修复点4
                 page.snack_bar = ft.SnackBar(ft.Text("天数必须是数字"))
                 page.snack_bar.open = True
                 page.update()
@@ -130,7 +130,6 @@ def main(page: ft.Page):
 
             days = int(days_str)
             
-            # 【一加适配】强制类型转换
             new_task = {
                 "id": str(datetime.now().timestamp()),
                 "name": str(name),
@@ -144,17 +143,15 @@ def main(page: ft.Page):
             app_data["tasks"].append(new_task)
             save_data(app_data)
             
-            # 强制刷新主页
             render_main_page(msg="创建成功", reload_from_disk=True)
             
         except Exception as e:
             traceback.print_exc()
-            # 修复点5
             page.snack_bar = ft.SnackBar(ft.Text(f"创建崩溃: {e}"), bgcolor="red")
             page.snack_bar.open = True
             page.update()
 
-    # ================= 4. UI 渲染 (修复报错版) =================
+    # ================= 4. UI 渲染 (加入成就墙) =================
     
     def render_main_page(e=None, msg=None, reload_from_disk=False):
         try:
@@ -165,6 +162,7 @@ def main(page: ft.Page):
 
             page.clean()
             
+            # --- 1. 构建任务列表 (保持原样) ---
             tasks_column = ft.Column(spacing=10) 
             
             if not app_data["tasks"]:
@@ -211,6 +209,53 @@ def main(page: ft.Page):
                 except:
                     continue
 
+            # --- 2. 新增：构建成就墙列表 ---
+            achievements_column = ft.Column(spacing=10)
+            
+            if app_data.get("achievements"):
+                for ach in app_data["achievements"]:
+                    try:
+                        achievements_column.controls.append(
+                            ft.Card(
+                                elevation=1,
+                                content=ft.ListTile(
+                                    leading=ft.Icon(ft.Icons.EMOJI_EVENTS, color="amber"),
+                                    title=ft.Text(f"{ach.get('name','未知')}", weight="bold"),
+                                    subtitle=ft.Text(f"完成于: {ach.get('finished_at','?')}", size=12),
+                                )
+                            )
+                        )
+                    except:
+                        continue
+            else:
+                achievements_column.controls.append(
+                    ft.Container(
+                        content=ft.Text("还没有成就，加油！", color="grey", size=16),
+                        alignment=ft.alignment.center,
+                        padding=50
+                    )
+                )
+
+            # --- 3. 使用 Tabs 将两者整合 ---
+            # 保持你的布局结构，将原来的 content 替换为 Tabs
+            tabs = ft.Tabs(
+                selected_index=0,
+                animation_duration=300,
+                tabs=[
+                    ft.Tab(
+                        text="进行中", 
+                        icon=ft.Icons.LIST, 
+                        content=ft.Container(content=tasks_column, padding=10)
+                    ),
+                    ft.Tab(
+                        text="成就墙", 
+                        icon=ft.Icons.EMOJI_EVENTS, 
+                        content=ft.Container(content=achievements_column, padding=10)
+                    ),
+                ],
+                expand=True,
+            )
+
             page.floating_action_button = ft.FloatingActionButton(
                 icon="add", bgcolor="teal", on_click=render_add_page
             )
@@ -221,9 +266,10 @@ def main(page: ft.Page):
                         ft.Container(height=10), 
                         ft.Text("  逆序打卡", size=28, weight="bold", color="teal"),
                         ft.Divider(),
+                        # 这里原本是 tasks_column，现在换成 tabs
+                        # 你的代码里用了 expand=True，这对 Tabs 也是适用的
                         ft.Container(
-                            content=tasks_column,
-                            padding=10,
+                            content=tabs,
                             expand=True 
                         )
                     ], scroll="auto", expand=True) 
@@ -231,14 +277,12 @@ def main(page: ft.Page):
             )
             
             if msg:
-                # 修复点6：这里也改回标准写法
                 page.snack_bar = ft.SnackBar(ft.Text(msg))
                 page.snack_bar.open = True
             
             page.update()
             
         except Exception as e:
-            # 紧急避险：如果主页渲染崩了，直接用 print 或者简单的 add 显示
             page.clean()
             page.add(ft.Text(f"主页渲染失败: {e}", color="red"))
             page.update()
@@ -280,7 +324,6 @@ def main(page: ft.Page):
                 )
             )
         )
-        # 这里补一个 update 确保界面刷新
         page.update()
 
     render_main_page()
