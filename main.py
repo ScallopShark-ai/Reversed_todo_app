@@ -5,33 +5,30 @@ import time
 
 def main(page: ft.Page):
     
-    # ================= 1. 一加13 专属配置 (保持不变) =================
+    # ================= 1. 基础配置 =================
     page.title = "逆序打卡"
     page.theme_mode = "light"
-    # 【绝对不能改】必须设为 None，否则 Tabs 会因为高度计算冲突导致白屏
+    # 【一加13适配】禁止整页滚动，防止布局冲突
     page.scroll = None 
     page.padding = 0 
     page.theme = ft.Theme()
 
-    # ================= 2. 数据层 (保持不变) =================
+    # ================= 2. 数据层 =================
     def load_data():
         try:
             data = page.client_storage.get("daka_data")
             if data is None:
                 return {"tasks": [], "achievements": []}
             return data
-        except Exception as e:
+        except Exception:
+            # 如果读取失败，返回空结构，防止白屏
             return {"tasks": [], "achievements": []}
 
     def save_data(data):
-        try:
-            page.client_storage.set("daka_data", data)
-        except Exception as e:
-            # 【修复1】改回标准写法，防止报错
-            page.snack_bar = ft.SnackBar(ft.Text(f"存储异常: {str(e)}"), bgcolor="red")
-            page.snack_bar.open = True
-            page.update()
+        # 这里不弹窗了，把错误抛出去让 UI 层处理
+        page.client_storage.set("daka_data", data)
 
+    # 初始化
     app_data = load_data()
 
     # 跨天逻辑
@@ -40,6 +37,10 @@ def main(page: ft.Page):
             today_str = datetime.now().strftime("%Y-%m-%d")
             today_date = datetime.strptime(today_str, "%Y-%m-%d")
             data_changed = False
+            
+            # 容错处理：确保 tasks 存在
+            if "tasks" not in app_data: app_data["tasks"] = []
+
             for task in app_data["tasks"]:
                 last_inter_str = task.get("last_interaction", today_str)
                 if not last_inter_str: last_inter_str = today_str
@@ -72,7 +73,6 @@ def main(page: ft.Page):
                 if task['id'] == task_id:
                     task['days'] -= 1
                     if task['days'] <= 0:
-                        # 任务完成：移入成就墙
                         app_data["tasks"].remove(task)
                         if "achievements" not in app_data: app_data["achievements"] = []
                         app_data["achievements"].insert(0, {
@@ -80,7 +80,6 @@ def main(page: ft.Page):
                             "created_at": task.get('created_at', '?'),
                             "finished_at": datetime.now().strftime("%Y-%m-%d")
                         })
-                        # 【修复1】改回标准写法
                         page.snack_bar = ft.SnackBar(ft.Text(f"🎉 {task['name']} 已完成！"))
                         page.snack_bar.open = True
                     else:
@@ -90,41 +89,11 @@ def main(page: ft.Page):
                     render_main_page(reload_from_disk=True)
                     break
         except Exception as e:
-            # 【修复1】改回标准写法
             page.snack_bar = ft.SnackBar(ft.Text(f"错误: {e}"), bgcolor="red")
             page.snack_bar.open = True
             page.update()
 
-    def do_add_task(name, days_str):
-        try:
-            if not days_str.isdigit():
-                page.snack_bar = ft.SnackBar(ft.Text("天数必须是纯数字"), bgcolor="red")
-                page.snack_bar.open = True
-                page.update()
-                return
-            
-            new_task = {
-                "id": str(datetime.now().timestamp()),
-                "name": str(name),
-                "days": int(days_str),
-                "original_target": int(days_str),
-                "created_at": str(datetime.now().strftime("%Y-%m-%d")),
-                "last_interaction": str(datetime.now().strftime("%Y-%m-%d")),
-                "checked_today": False
-            }
-            app_data["tasks"].append(new_task)
-            save_data(app_data)
-            
-            render_main_page(msg="创建成功", reload_from_disk=True)
-            
-        except Exception as e:
-            traceback.print_exc()
-            # 【修复1】改回标准写法
-            page.snack_bar = ft.SnackBar(ft.Text(f"创建崩溃: {e}"), bgcolor="red")
-            page.snack_bar.open = True
-            page.update()
-
-    # ================= 4. UI 渲染 (修复报错 + 恢复成就墙) =================
+    # ================= 4. UI 渲染 =================
     def render_main_page(e=None, msg=None, reload_from_disk=False):
         try:
             if reload_from_disk:
@@ -134,9 +103,9 @@ def main(page: ft.Page):
 
             page.clean()
             
-            # --- 构建任务列表 (List View) ---
+            # --- 任务列表 ---
             tasks_list = ft.ListView(expand=True, spacing=10, padding=10)
-            if not app_data["tasks"]:
+            if not app_data.get("tasks"):
                 tasks_list.controls.append(
                     ft.Container(content=ft.Text("暂无挑战，点 + 号开启", color="grey"), alignment=ft.alignment.center, padding=40)
                 )
@@ -174,9 +143,9 @@ def main(page: ft.Page):
                         tasks_list.controls.append(card)
                     except: continue
 
-            # --- 【修复2】构建成就墙列表 ---
+            # --- 成就墙 ---
             achieve_list = ft.ListView(expand=True, spacing=10, padding=10)
-            if "achievements" in app_data and app_data["achievements"]:
+            if app_data.get("achievements"):
                 for ach in app_data["achievements"]:
                     achieve_list.controls.append(
                         ft.Card(
@@ -193,25 +162,24 @@ def main(page: ft.Page):
                     ft.Container(content=ft.Text("还没有成就", color="grey"), alignment=ft.alignment.center, padding=40)
                 )
 
-            # --- 【修复2】恢复 Tabs 组件 ---
+            # --- Tabs ---
             tabs = ft.Tabs(
                 selected_index=0,
-                animation_duration=0, # 关闭动画，防闪烁
+                animation_duration=0,
                 tabs=[
                     ft.Tab(text="进行中", icon=ft.Icons.LIST, content=tasks_list),
                     ft.Tab(text="成就墙", icon=ft.Icons.EMOJI_EVENTS, content=achieve_list),
                 ],
-                expand=True, # 撑满剩余空间
+                expand=True,
             )
 
-            # 页面组装
             page.add(
                 ft.SafeArea(
                     ft.Column([
                         ft.Container(height=10),
                         ft.Text("  逆序打卡", size=26, weight="bold", color="teal"),
                         ft.Divider(height=1, thickness=1),
-                        tabs # Tab 放在 expand 的 Column 里，解决白屏问题
+                        tabs
                     ], expand=True) 
                 )
             )
@@ -221,7 +189,6 @@ def main(page: ft.Page):
             )
             
             if msg:
-                # 【修复1】改回标准写法
                 page.snack_bar = ft.SnackBar(ft.Text(msg))
                 page.snack_bar.open = True
             
@@ -229,40 +196,76 @@ def main(page: ft.Page):
             
         except Exception as e:
             page.clean()
-            page.add(ft.Text(f"渲染失败: {e}", color="red"))
+            page.add(ft.Text(f"渲染崩溃: {e}", color="red"))
             page.update()
 
-    # --- 添加页 (保持你喜欢的话痨版逻辑) ---
+    # ================= 5. 添加页 (带诊断功能) =================
     def render_add_page(e=None):
         page.clean()
         page.floating_action_button = None
         
         name_field = ft.TextField(label="任务名称", autofocus=False)
         days_field = ft.TextField(label="天数 (数字)", keyboard_type="number")
+        
+        # --- 诊断日志区 (专门解决“没反应”的问题) ---
+        log_text = ft.Text("准备就绪...", color="grey", size=12)
+        
+        def update_log(msg, color="black"):
+            print(msg) # 打印到后台
+            log_text.value = f"{datetime.now().strftime('%H:%M:%S')} - {msg}"
+            log_text.color = color
+            log_text.update()
+
+        # --- 强力清理按钮 ---
+        def clear_cache(e):
+            try:
+                page.client_storage.clear()
+                # 重置内存
+                app_data["tasks"] = []
+                app_data["achievements"] = []
+                update_log("缓存已强制清空！旧数据已删除。", "green")
+            except Exception as ex:
+                update_log(f"清空失败: {ex}", "red")
 
         def on_confirm(e):
-            e.control.text = "检测中..."
-            e.control.update()
+            update_log("正在检测输入...", "blue")
             
             if not name_field.value:
-                e.control.text = "创建"
-                e.control.update()
-                page.snack_bar = ft.SnackBar(ft.Text("❌ 请输入任务名称！"), bgcolor="red")
-                page.snack_bar.open = True
-                page.update()
+                update_log("❌ 错误：任务名称不能为空", "red")
                 return
-
             if not days_field.value:
-                e.control.text = "创建"
-                e.control.update()
-                page.snack_bar = ft.SnackBar(ft.Text("❌ 请输入天数！"), bgcolor="red")
-                page.snack_bar.open = True
-                page.update()
+                update_log("❌ 错误：天数不能为空", "red")
                 return
 
-            e.control.text = "保存中..."
-            e.control.update()
-            do_add_task(name_field.value, days_field.value)
+            try:
+                update_log("正在构建数据...", "blue")
+                
+                # 构造新任务
+                new_task = {
+                    "id": str(datetime.now().timestamp()),
+                    "name": str(name_field.value),
+                    "days": int(days_field.value),
+                    "original_target": int(days_field.value),
+                    "created_at": str(datetime.now().strftime("%Y-%m-%d")),
+                    "last_interaction": str(datetime.now().strftime("%Y-%m-%d")),
+                    "checked_today": False
+                }
+                
+                # 确保内存列表存在
+                if "tasks" not in app_data: app_data["tasks"] = []
+                app_data["tasks"].append(new_task)
+                
+                update_log("正在写入存储...", "blue")
+                save_data(app_data)
+                
+                update_log("✅ 成功！正在跳转...", "green")
+                time.sleep(0.5) # 让你看清成功提示
+                render_main_page(msg="任务创建成功！", reload_from_disk=True)
+                
+            except Exception as ex:
+                # 把最底层的错误显示出来！
+                traceback.print_exc()
+                update_log(f"💥 严重崩溃: {str(ex)}", "red")
 
         def on_cancel(e):
             render_main_page()
@@ -277,11 +280,26 @@ def main(page: ft.Page):
                         name_field,
                         ft.Container(height=20),
                         days_field,
-                        ft.Container(height=40),
+                        ft.Container(height=20),
+                        
+                        # 日志显示区 (防止键盘遮挡 SnackBar)
+                        ft.Container(
+                            content=log_text,
+                            bgcolor=ft.colors.GREY_100,
+                            padding=10,
+                            border_radius=5,
+                            width=300
+                        ),
+                        
+                        ft.Container(height=20),
                         ft.Row([
                             ft.ElevatedButton("取消", on_click=on_cancel),
                             ft.ElevatedButton("创建", on_click=on_confirm, bgcolor="teal", color="white"),
-                        ], alignment="center")
+                        ], alignment="center"),
+                        
+                        ft.Container(height=30),
+                        ft.Divider(),
+                        ft.TextButton("⚠️如果一直创建失败，点我清空缓存", on_click=clear_cache, style=ft.ButtonStyle(color="red"))
                     ], horizontal_alignment="center", scroll="auto")
                 )
             )
